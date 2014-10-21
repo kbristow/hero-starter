@@ -118,7 +118,7 @@ var move = function(gameData, helpers) {
 };
 */
 
-
+/*
 // The "Safe Diamond Miner"
 // This hero will attempt to capture enemy diamond mines.
 var move = function(gameData, helpers) {
@@ -145,7 +145,79 @@ var move = function(gameData, helpers) {
     return helpers.findNearestNonTeamDiamondMine(gameData);
   }
 };
+*/
 
+// The "Safe Diamond Miner"
+// This hero will attempt to capture enemy diamond mines.
+var move = function(gameData, helpers) {
+  var myHero = gameData.activeHero;
+
+  //Get stats on the nearest health well
+  var healthWellStats = helpers.findNearestObjectDirectionAndDistance(gameData.board, myHero, function(boardTile) {
+    if (boardTile.type === 'HealthWell') {
+      return true;
+    }
+  });
+
+  var distanceToHealthWell = healthWellStats.distance;
+  var directionToHealthWell = healthWellStats.direction;
+  var hwCoords = healthWellStats.coords;
+
+  var injuredTeam = helpers.findNearestObjectDirectionAndDistance(gameData.board, myHero, function(boardTile) {
+    if (boardTile.type === 'Hero' && boardTile.team === boardTile.team && boardTile.health < 40) {
+      return true;
+    }
+  });
+
+  var distanceToTeam = injuredTeam.distance;
+  var directionToTeam = injuredTeam.direction;
+  var itCoords = injuredTeam.coords;
+
+  var injuredEnemy = helpers.findNearestObjectDirectionAndDistance(gameData.board, myHero, function(boardTile) {
+    if (boardTile.type === 'Hero' && boardTile.team !== boardTile.team && boardTile.health < 40) {
+      return true;
+    }
+  });
+
+  var distanceToEnemy = injuredEnemy.distance;
+  var directionToEnemy = injuredEnemy.direction;
+  var itCoords = injuredEnemy.coords;
+  
+
+  if (myHero.health <= 50) {
+    var weightedDirection = helpers.findWeightedPathDirectionAndDistance(gameData, {x: myHero.distanceFromLeft, y: myHero.distanceFromTop}, {x: hwCoords[1], y: hwCoords[0]}, helpers.basicEnemyAvoid, helpers.manhattanHeuristic);
+    //Heal no matter what if low health
+    return weightedDirection;
+  } else if(distanceToEnemy === 1){
+    return directionToEnemy;
+  } else if(distanceToTeam === 1){
+    return directionToTeam;
+  } else if (myHero.health < 100 && distanceToHealthWell === 1) {
+     //Heal if you aren't full health and are close to a health well already
+     return directionToHealthWell;
+  } else {
+    var diamondMineStats = helpers.findNearestObjectDirectionAndDistance(gameData.board, myHero, function(boardTile) {
+      if (boardTile.type === 'DiamondMine') {
+        if (boardTile.owner) {
+          return boardTile.owner.team !== myHero.team;
+        } else {
+          return true;
+        }
+      } else {
+        return false;
+      }
+    });
+
+    var diamondCoords = diamondMineStats.coords;
+    var weightedDirection = 'Stay';
+    if (typeof diamondCoords != 'undefined'){
+      weightedDirection = helpers.findWeightedPathDirectionAndDistance(gameData, {x: myHero.distanceFromLeft, y: myHero.distanceFromTop}, {x: diamondCoords[1], y: diamondCoords[0]}, helpers.basicEnemyAvoid, helpers.manhattanHeuristic);
+    }
+    //If healthy, go capture a diamond mine!
+    return weightedDirection;
+    //return helpers.findNearestNonTeamDiamondMine(gameData);
+  }
+};
 
 /*
 // The "Selfish Diamond Miner"

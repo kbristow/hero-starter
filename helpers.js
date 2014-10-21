@@ -34,6 +34,178 @@ helpers.getTileNearby = function(board, distanceFromTop, distanceFromLeft, direc
   }
 };
 
+
+helpers.manhattanHeuristic = function(startLocation, targetLocation){
+  var dx = targetLocation.x - startLocation.x;
+  var dy = targetLocation.y - startLocation.y;
+  return Math.abs(dx) + Math.abs(dy);
+};
+
+helpers.basicEnemyAvoid = function (gameData, x, y){
+  var hero = gameData.activeHero;
+  var board = gameData.board;
+  var cost = 1;
+  for (var i = y-2; i <= y+2; i ++){
+    for (var j = x-2; j <= x + 2; j ++)
+    var validTile = helpers.validCoordinates(board, i, j)
+    if (validTile){
+      var tile = board.tiles[i][j];
+      if (typeof tile != "undefined" && tile.type === 'Hero' && tile.team !== hero.team){
+        cost += 5;
+      }
+    }
+  }
+  return cost;
+};
+
+
+helpers.findWeightedPathDirectionAndDistance = function(gameData, fromTile, target, tileEvaluator, heuristicCallback){
+  var board = gameData.board
+  var openList = [];
+  var closedList = [];
+  var costs = {};
+  var parents = {};
+
+  function nodeToKey(node){
+      return node.x + "|" + node.y;
+  }
+
+  function inNodeList(nodeList, node){
+    for (var i = 0; i < nodeList.length; i ++){
+      if (nodeList[i].x === node.x && nodeList[i].y === node.y){
+        return i;
+      }
+    }
+    return false;
+  }
+
+  function insertIntoOpenList(newNode, heuristicValue){
+    var newKey = nodeToKey(newNode);
+
+    for (var i = 0; i < openList.length; i ++){
+      var currentKey = nodeToKey(openList[i]);
+      if (costs[currentKey] > costs[newKey] ){
+        openList.splice(i, 0, newNode);
+        return;
+      }
+    }
+
+    openList.push(newNode);
+  }
+
+  function buildPath(currentNode, startNode){
+    //console.log(JSON.stringify(currentNode));
+    //console.log(JSON.stringify(startNode));
+    if (currentNode.x == startNode.x && currentNode.y == startNode.y){
+      return [];
+    }
+    else{
+      var parent = parents[nodeToKey(currentNode)];
+      var currentPath = buildPath(parent, startNode);
+      currentPath.push({node: currentNode, direction: directionFromNode(parent, currentNode)})
+      return currentPath;
+    }
+  }
+
+  function directionFromNode(startNode, neighbourNode){
+    var dX = neighbourNode.x - startNode.x;
+    var dY = neighbourNode.y - startNode.y;
+    if (dX > 0){
+      return "East";
+    }
+    else if (dX < 0){
+      return "West";
+    }
+    else if (dY > 0){
+      return "South";
+    }
+    else if (dY < 0){
+      return "North";
+    }
+
+    return "Stay";
+  }
+
+
+  var currentKey = nodeToKey(fromTile);
+  openList.push(fromTile);
+  costs[currentKey] = 0;
+  parents[currentKey] = fromTile;
+
+  while(openList.length !==0 && (openList[0].x !== target.x || openList[0].y !== target.y)){
+
+    var currentNode = openList.splice(0,1)[0];
+    closedList.push(currentNode);
+    currentKey = nodeToKey(currentNode);
+
+    /*console.log("OpenList: " + JSON.stringify(openList));
+    console.log("ClosedList: " + JSON.stringify(closedList));
+    console.log("Current: " + JSON.stringify(currentNode));
+    console.log("Target: " + JSON.stringify(target));
+    */
+    var neighbours = helpers.getNeighbouringTiles(board, currentNode, target);
+    /*
+    console.log("Neighbours: " + JSON.stringify(neighbours));
+    console.log("-----------------------------------------------");*/
+
+    for (var i = 0; i < neighbours.length; i ++){
+      var neighbourKey = nodeToKey(neighbours[i]);
+      var cost = costs[currentKey] + tileEvaluator(gameData, neighbours[i].x, neighbours[i].y);
+
+      var isInOpenList = inNodeList(openList, neighbours[i]);
+      if (isInOpenList !== false && costs[neighbourKey] > cost){
+        openList.splice(isInOpenList,1);
+        isInOpenList = false;
+      }
+
+      var isInClosedList = inNodeList(closedList, neighbours[i]);
+      if (isInClosedList !== false && costs[neighbourKey] > cost){
+        closedList.splice(isInClosedList,1);
+        isInClosedList = false;
+      }
+
+      if (isInClosedList === false && isInOpenList === false){
+        costs[neighbourKey] = cost;
+        insertIntoOpenList(neighbours[i], heuristicCallback(neighbours[i], target));
+        parents[neighbourKey] = currentNode; 
+      }
+    }
+
+  }
+
+  if (openList.length !== 0){
+    var path = buildPath(openList[0], fromTile);
+    //console.log(JSON.stringify(path));
+    //console.log(JSON.stringify(target));
+    console.log(JSON.stringify(path));
+    return path[0].direction;
+  }
+
+
+  // If we are blocked and there is no way to get where we want to go, return false
+  return false;
+
+};
+
+helpers.getNeighbouringTiles = function (board, location, target){
+  var neighbours = [];
+  var directions = ['North', 'East', 'South', 'West'];
+  for (var i = 0; i < directions.length; i++) {
+    // For each of the cardinal directions get the next tile...
+    var direction = directions[i];
+
+    // ...Use the getTileNearby helper method to do this
+    var nextTile = helpers.getTileNearby(board, location.y, location.x, direction);
+
+    // If nextTile is a valid location to move...
+    if (nextTile && (nextTile.type === 'Unoccupied' || nextTile.type === 'Bones' || (nextTile.distanceFromLeft == target.x && nextTile.distanceFromTop == target.y))) {
+      neighbours.push({x: nextTile.distanceFromLeft, y: nextTile.distanceFromTop});
+    }
+  }
+  return neighbours;
+}
+
+
 // Returns an object with certain properties of the nearest object we are looking for
 helpers.findNearestObjectDirectionAndDistance = function(board, fromTile, tileCallback) {
   // Storage queue to keep track of places the fromTile has been
@@ -95,7 +267,6 @@ helpers.findNearestObjectDirectionAndDistance = function(board, fromTile, tileCa
 
         //Is this tile the one we want?
         } else if (isGoalTile) {
-
           // This variable will eventually hold the first direction we went on this path
           var correctDirection = direction;
 
